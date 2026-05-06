@@ -11,11 +11,11 @@ memory: 8192
 
 containers:
   - name: "sim"
-    image: "ghcr.io/OWNER/REPO:placeholder"
+    image: "ghcr.io/tinfoilsh/tinfoil-persistent-storage-example:placeholder"
     env:
       - PORT: "8080"
-      - AWS_REGION: "us-east-1"
-      - S3_BUCKET: "REPLACE-WITH-YOUR-BUCKET"
+      - AWS_REGION: "us-east-2"
+      - S3_BUCKET: "tinfoil-demo-579421472636-us-east-2-an"
     # To resume an existing run, set:
     #   command: ["--resume-from", "2026-05-06T04-43-46Z:2"]
     secrets:
