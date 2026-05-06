@@ -40,3 +40,14 @@ Checkpoints land at `s3://$S3_BUCKET/{run_id}/checkpoint-{N}.json` plus a `lates
 To resume: set `RUN_ID=<original>` and `RESUME_FROM_CHECKPOINT=2`. Sim loads checkpoint 2, restores rng state, and picks up at the start of phase 3. Because the rng is restored, the resumed run is identical to the original — handy for verifying nothing got corrupted.
 
 Next: wire up the tinfoil-buckets backend, then the custom-encryption one. Both will reuse `sim.py` and just swap out `storage.py`.
+
+## Check s3 works
+
+Fill in `.env` (copy from `.env.example`) and run a round-trip — should print `hi`.
+
+```bash
+set -a && source .env && set +a
+echo hi | aws s3 cp - s3://$S3_BUCKET/_smoke && aws s3 cp s3://$S3_BUCKET/_smoke - && aws s3 rm s3://$S3_BUCKET/_smoke
+```
+
+If that errors, your creds, region, or bucket name are off. Fix that before running the container.
