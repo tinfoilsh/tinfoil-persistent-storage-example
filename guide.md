@@ -141,21 +141,7 @@ Phase 2: drift
 
 After the bar finishes, the in-enclave sim exits, the container stops. The s3 data persists — that's the point.
 
-### ssh into the enclave
-
-Because you deployed with `--debug`, you can shell in. The same `tinfoil container get` output prints the SSH command — port varies per container:
-
-```bash
-ssh -p <port> root@console.tinfoil.sh
-```
-
-Useful while iterating: tail logs, confirm secrets/env landed, poke at the running container if something looks off.
-
-```bash
-# inside the enclave
-env | grep -E '^(AWS|S3)'   # are creds + bucket set?
-docker logs -f $(docker ps -q)   # tail sim stdout
-```
+Because you deployed with `--debug`, you can shell in any time to look at logs or poke around — `tinfoil container get` prints the SSH command (`ssh -p <port> root@console.tinfoil.sh`).
 
 ## 7. plot the trajectory
 
