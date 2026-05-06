@@ -1,6 +1,6 @@
 # Simple persistent storage example
 
-Tinfoil containers are ephemeral. This example shows how to checkpoint long-running work to S3 so a Tinfoil-deployed container can be restarted from a known point.
+Tinfoil containers are ephemeral. This example shows how to checkpoint long-running work to S3 to avoid losing results, and to restart from a checkpoint.
 
 The workload is a mock 4-phase random walk (explore → drift → converge → oscillate) that writes a checkpoint to S3 at every phase boundary. Restartable from any checkpoint.
 
@@ -16,6 +16,20 @@ The short version (assuming aws + tinfoil are already set up):
 4. Create the container — `tinfoil container create persistent-storage-sim --repo <owner>/<repo> --tag v0.1.0 --secret AWS_ACCESS_KEY_ID --secret AWS_SECRET_ACCESS_KEY`.
 5. Watch — `python status.py --url https://<domain>/status`.
 6. Plot — `python view.py --bucket $S3_BUCKET --latest`.
+
+## What this looks like
+
+`python status.py` — colored per-phase progress bar, ticks through `explore → drift → converge → oscillate`, prints the saved checkpoint path after each phase:
+
+![status.py output](public/status.png)
+
+`python view.py --bucket $S3_BUCKET` — list every run in the bucket, then `--latest` to render the most recent:
+
+![view.py listing + plot](public/view.png)
+
+The output `trajectory.png` — color-coded by phase. Below is a 2-checkpoint run (interrupted before `converge`), to show what an in-progress trajectory looks like.
+
+![trajectory plot](public/checkpoint2.png)
 
 ## Layout
 

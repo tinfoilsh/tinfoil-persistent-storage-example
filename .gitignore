@@ -5,4 +5,4 @@ __pycache__/
 venv/
 .env
 *.png
-checkpoints-local/
+!public/*.png
