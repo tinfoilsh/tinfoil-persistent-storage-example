@@ -1,14 +1,19 @@
 """S3 persistence for sim checkpoints.
 
 Layout under the configured bucket:
-    {run_id}/checkpoint-{N}.json   one per phase boundary
-    {run_id}/latest.json           pointer to the highest N written
+    persistent-storage/{run_id}/checkpoint-{N}.json   one per phase boundary
+    persistent-storage/{run_id}/latest.json           pointer to the highest N written
+
+run_id is a UTC timestamp (YYYY-MM-DDTHH-MM-SSZ) generated in sim.py.
+The PREFIX constant is duplicated in view.py — keep them in sync.
 """
 
 import json
 import os
 
 import boto3
+
+PREFIX = "persistent-storage/"
 
 _client = None
 
@@ -29,11 +34,11 @@ def bucket() -> str:
 
 
 def checkpoint_key(run_id: str, n: int) -> str:
-    return f"{run_id}/checkpoint-{n}.json"
+    return f"{PREFIX}{run_id}/checkpoint-{n}.json"
 
 
 def latest_key(run_id: str) -> str:
-    return f"{run_id}/latest.json"
+    return f"{PREFIX}{run_id}/latest.json"
 
 
 def write_checkpoint(run_id: str, n: int, payload: dict) -> None:
@@ -56,18 +61,3 @@ def write_checkpoint(run_id: str, n: int, payload: dict) -> None:
 def load_checkpoint(run_id: str, n: int) -> dict:
     obj = s3().get_object(Bucket=bucket(), Key=checkpoint_key(run_id, n))
     return json.loads(obj["Body"].read())
-
-
-def list_checkpoints(run_id: str) -> list[int]:
-    paginator = s3().get_paginator("list_objects_v2")
-    nums = []
-    prefix = f"{run_id}/checkpoint-"
-    for page in paginator.paginate(Bucket=bucket(), Prefix=prefix):
-        for obj in page.get("Contents") or []:
-            key = obj["Key"]
-            try:
-                n = int(key.rsplit("checkpoint-", 1)[1].split(".json")[0])
-                nums.append(n)
-            except (ValueError, IndexError):
-                continue
-    return sorted(nums)

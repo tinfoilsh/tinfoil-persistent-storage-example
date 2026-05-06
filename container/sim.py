@@ -10,10 +10,10 @@ continues from the start of the next phase using the persisted RNG state, so
 runs are deterministic across resumes.
 """
 
+import datetime
 import os
 import sys
 import time
-import uuid
 
 import numpy as np
 import server
@@ -67,14 +67,19 @@ def run_phase(
     phase_idx: int, start_step: int, start_pos: np.ndarray, rng: np.random.Generator
 ):
     phase = PHASES[phase_idx]
-    server.update(phase=phase["name"], phase_index=phase_idx)
+    server.update(
+        phase=phase["name"],
+        phase_index=phase_idx,
+        phase_step=0,
+        phase_total=phase["steps"],
+    )
     pos = start_pos.copy()
     traj = []
     for t in range(phase["steps"]):
         pos = step_position(pos, phase, t, rng)
         step = start_step + t + 1
         traj.append([step, float(pos[0]), float(pos[1])])
-        server.update(step=step)
+        server.update(step=step, phase_step=t + 1)
         # mock delay - 20ms/step
         time.sleep(0.02)
     return pos, traj, start_step + phase["steps"]
@@ -135,7 +140,9 @@ def main() -> None:
             flush=True,
         )
     else:
-        run_id = run_id or str(uuid.uuid4())
+        run_id = run_id or datetime.datetime.now(datetime.timezone.utc).strftime(
+            "%Y-%m-%dT%H-%M-%SZ"
+        )
         start_phase_idx = 0
         start_step = 0
         start_pos = np.zeros(2)
