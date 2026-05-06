@@ -1,0 +1,19 @@
+# Tinfoil Container Configuration
+# After creating a repo from this template, replace OWNER/REPO below with your
+# GitHub path (e.g. ghcr.io/tinfoilsh/my-app). The build workflow rewrites the
+# digest on every tagged release — you don't need to touch the @sha256 part.
+#
+# Full reference: https://docs.tinfoil.sh/containers/configuration
+
+cvm-version: 0.7.5
+cpus: 1
+memory: 1024
+
+containers:
+  - name: "app"
+    image: "ghcr.io/OWNER/REPO:placeholder"
+
+shim:
+  upstream-port: 8080
+  paths:
+    - /*
