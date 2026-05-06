@@ -1,11 +1,12 @@
-FROM golang:1.25-alpine AS builder
-WORKDIR /app
-COPY go.mod ./
-COPY *.go ./
-RUN CGO_ENABLED=0 GOOS=linux go build -o app .
+FROM python:3.13-slim
 
-FROM alpine:latest
 WORKDIR /app
-COPY --from=builder /app/app .
+
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY container/ ./
+
 EXPOSE 8080
-ENTRYPOINT ["./app"]
+
+ENTRYPOINT ["python", "-u", "sim.py"]

@@ -1,4 +1,13 @@
 .git
 .github
+.gitignore
+.dockerignore
 README.md
 tinfoil-config.yml
+view.py
+__pycache__
+*.pyc
+.venv
+venv
+*.png
+checkpoints-local/

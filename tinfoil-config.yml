@@ -6,14 +6,25 @@
 # Full reference: https://docs.tinfoil.sh/containers/configuration
 
 cvm-version: 0.7.5
-cpus: 1
-memory: 1024
+cpus: 2
+memory: 8192
 
 containers:
-  - name: "app"
+  - name: "sim"
     image: "ghcr.io/OWNER/REPO:placeholder"
+    env:
+      - PORT: "8080"
+      - AWS_REGION: "us-east-1"
+      - S3_BUCKET: "REPLACE-WITH-YOUR-BUCKET"
+      # To resume a previous run, also set RUN_ID and RESUME_FROM_CHECKPOINT
+      # (e.g. RUN_ID: "abc-123", RESUME_FROM_CHECKPOINT: "2"). Leaving these
+      # unset starts a fresh run with a generated UUID.
+    secrets:
+      - AWS_ACCESS_KEY_ID
+      - AWS_SECRET_ACCESS_KEY
 
 shim:
   upstream-port: 8080
   paths:
-    - /*
+    - /health
+    - /status
