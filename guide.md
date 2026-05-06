@@ -8,6 +8,7 @@ The workload is a 4-phase mock random walk that checkpoints to S3 at every phase
 
 - an AWS account + a bucket
 - a tinfoil org with the **containers** product enabled
+- an SSH keypair (e.g. `~/.ssh/id_ed25519` — `ssh-keygen -t ed25519` if you don't have one). Used for SSHing into the debug container.
 - `aws`, `tinfoil`, `gh` clis on your laptop
 - python 3.10+
 
@@ -39,7 +40,7 @@ echo hi | aws s3 cp - s3://$S3_BUCKET/_smoke && aws s3 cp s3://$S3_BUCKET/_smoke
 # should print "hi"
 ```
 
-## 2. push aws creds to tinfoil
+## 2. push aws creds + ssh key to tinfoil
 
 The container runs in an enclave — it needs access to the bucket. Tinfoil injects org-level secrets at boot. Names must match the `secrets:` list in `tinfoil-config.yml`.
 
@@ -52,6 +53,15 @@ printf '%s' "$AWS_SECRET_ACCESS_KEY" | tinfoil secret create AWS_SECRET_ACCESS_K
 ```
 
 (Use `tinfoil secret set <name> --value-file -` instead of `create` if they already exist.)
+
+Register your SSH public key — debug containers (next steps) authorize SSH using org-level keys:
+
+```bash
+tinfoil ssh-key list                                                       # see what's already registered
+tinfoil ssh-key create laptop --public-key-file ~/.ssh/id_ed25519.pub
+```
+
+Pick any name (`laptop` here); you'll reference it at deploy time with `--ssh-key laptop`.
 
 ## 3. configure tinfoil-config.yml
 
@@ -78,12 +88,16 @@ gh run watch    # wait for both jobs to go green
 git pull        # fetch the digest-pin commit the action pushed
 ```
 
-## 5. create the container
+## 5. create the container (debug mode)
+
+Deploy in debug mode while you're iterating — you get SSH access + container logs, which makes it easy to inspect the enclave when something goes wrong. (Section 9 covers switching to prod once your iteration loop is settled.)
 
 ```bash
 tinfoil container create persistent-storage-sim \
   --repo <owner>/<repo> \
   --tag v0.1.0 \
+  --debug \
+  --ssh-key laptop \
   --secret AWS_ACCESS_KEY_ID \
   --secret AWS_SECRET_ACCESS_KEY
 ```
@@ -99,7 +113,7 @@ The CVM starts the container immediately, so by the time it's `active` the sim i
 
 ## 6. watch it run
 
-Copy the `Domain:` line from `tinfoil container get persistent-storage-sim` — it'll look something like `persistent-storage-sim.<org>.containers.tinfoil.dev`.
+Copy the `Domain:` line from `tinfoil container get persistent-storage-sim` — debug containers live under `persistent-storage-sim.debug.<org>.containers.tinfoil.dev` (note the `.debug.`).
 
 ```bash
 DOMAIN=<paste from tinfoil container get>
@@ -126,6 +140,22 @@ Phase 2: drift
 ```
 
 After the bar finishes, the in-enclave sim exits, the container stops. The s3 data persists — that's the point.
+
+### ssh into the enclave
+
+Because you deployed with `--debug`, you can shell in. The same `tinfoil container get` output prints the SSH command — port varies per container:
+
+```bash
+ssh -p <port> root@console.tinfoil.sh
+```
+
+Useful while iterating: tail logs, confirm secrets/env landed, poke at the running container if something looks off.
+
+```bash
+# inside the enclave
+env | grep -E '^(AWS|S3)'   # are creds + bucket set?
+docker logs -f $(docker ps -q)   # tail sim stdout
+```
 
 ## 7. plot the trajectory
 
@@ -158,7 +188,17 @@ tinfoil container relaunch persistent-storage-sim --tag v0.1.1
 
 The new run reuses the saved numpy rng state — resumed checkpoints are byte-identical to what an uninterrupted run would have produced.
 
-## 9. cleanup
+## 9. promote to prod
+
+Debug mode is for iteration and testing. When you're ready for the real security guarantees — attestation (verified enclave), no SSH, no docker logs — switch to production:
+
+```bash
+tinfoil container relaunch persistent-storage-sim --debug false
+```
+
+The domain moves from `<name>.debug.<org>.containers.tinfoil.dev` back to `<name>.<org>.containers.tinfoil.dev`. Production containers pass attestation, so callers using `tinfoil proxy` or `SecureClient` will accept them.
+
+## 10. cleanup
 
 ```bash
 tinfoil container stop   persistent-storage-sim   # pauses, keeps state
