@@ -11,7 +11,7 @@ memory: 8192
 
 containers:
   - name: "sim"
-    image: "ghcr.io/tinfoilsh/tinfoil-persistent-storage-example:placeholder"
+    image: "ghcr.io/tinfoilsh/tinfoil-persistent-storage-example@sha256:bfae2dcbe03bcc0bdb3141ea3cbedcc8a4f568f9150f181c918be8cf9b45bad5" # v0.1.0
     env:
       - PORT: "8080"
       - AWS_REGION: "us-east-2"
