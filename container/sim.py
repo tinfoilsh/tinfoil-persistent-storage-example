@@ -75,8 +75,8 @@ def run_phase(
         step = start_step + t + 1
         traj.append([step, float(pos[0]), float(pos[1])])
         server.update(step=step)
-        # sleep 10ms
-        time.sleep(10)
+        # mock delay - 20ms/step
+        time.sleep(0.02)
     return pos, traj, start_step + phase["steps"]
 
 
@@ -145,8 +145,13 @@ def main() -> None:
         n_written = 0
         print(f"started fresh run_id={run_id}", flush=True)
 
+    total_steps = sum(p["steps"] for p in PHASES)
     server.update(
-        run_id=run_id, step=start_step, checkpoints_written=n_written, done=False
+        run_id=run_id,
+        step=start_step,
+        checkpoints_written=n_written,
+        done=False,
+        total_steps=total_steps,
     )
     port = int(os.environ.get("PORT", "8080"))
     server.serve_in_thread(port)
@@ -157,7 +162,7 @@ def main() -> None:
     if start_phase_idx >= len(PHASES):
         print("nothing to do, all phases already completed", flush=True)
         server.update(done=True)
-        _idle_forever()
+        _grace_then_exit()
         return
 
     for phase_idx in range(start_phase_idx, len(PHASES)):
@@ -173,14 +178,12 @@ def main() -> None:
 
     server.update(done=True)
     print(f"sim complete. run_id={run_id}, total checkpoints={n_written}", flush=True)
-    _idle_forever()
+    _grace_then_exit()
 
 
-def _idle_forever() -> None:
-    if os.environ.get("SIM_EXIT_WHEN_DONE", "").strip() in ("1", "true", "yes"):
-        return
-    while True:
-        time.sleep(60)
+def _grace_then_exit() -> None:
+    # brief window so the last /status poll lands before the HTTP server dies
+    time.sleep(5)
 
 
 if __name__ == "__main__":
