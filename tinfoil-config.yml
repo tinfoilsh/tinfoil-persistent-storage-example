@@ -1,7 +1,6 @@
 # Tinfoil Container Configuration
-# After creating a repo from this template, replace OWNER/REPO below with your
-# GitHub path (e.g. ghcr.io/tinfoilsh/my-app). The build workflow rewrites the
-# digest on every tagged release — you don't need to touch the @sha256 part.
+# The image's @sha256:... is rewritten by tinfoil-build.yml on each tagged
+# release — leave it alone. Edit env values + secrets here as needed.
 #
 # Full reference: https://docs.tinfoil.sh/containers/configuration
 

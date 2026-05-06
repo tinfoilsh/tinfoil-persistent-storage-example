@@ -24,18 +24,18 @@ set -a && source .env && set +a
 Make a bucket and an IAM user scoped to it.
 
 ```bash
-export BUCKET=my-tinfoil-sim-bucket   # whatever
+export S3_BUCKET=my-tinfoil-sim-bucket   # whatever
 export AWS_REGION=us-east-2
-aws s3 mb s3://$BUCKET --region $AWS_REGION
+aws s3 mb s3://$S3_BUCKET --region $AWS_REGION
 ```
 
-In the AWS console: **IAM → Users → Create user** (no console access). Attach `AmazonS3FullAccess` for the demo (or scope to just this bucket if you want — the README has the policy json). Open the user → **Security credentials → Create access key → CLI**. Save the access key + secret somewhere safe — only shown once.
+In the AWS console: **IAM → Users → Create user** (no console access). Attach `AmazonS3FullAccess` for the demo. Open the user → **Security credentials → Create access key → CLI**. Save the access key + secret somewhere safe — only shown once.
 
 Sanity check from your laptop:
 
 ```bash
 aws configure   # paste access key + secret + us-east-2
-echo hi | aws s3 cp - s3://$BUCKET/_smoke && aws s3 cp s3://$BUCKET/_smoke - && aws s3 rm s3://$BUCKET/_smoke
+echo hi | aws s3 cp - s3://$S3_BUCKET/_smoke && aws s3 cp s3://$S3_BUCKET/_smoke - && aws s3 rm s3://$S3_BUCKET/_smoke
 # should print "hi"
 ```
 
@@ -99,10 +99,10 @@ The CVM starts the container immediately, so by the time it's `active` the sim i
 
 ## 6. watch it run
 
-`tinfoil container get` prints the domain. Hit `/status` directly or use the colored progress bar:
+Copy the `Domain:` line from `tinfoil container get persistent-storage-sim` — it'll look something like `persistent-storage-sim.<org>.containers.tinfoil.dev`.
 
 ```bash
-DOMAIN=persistent-storage-sim.<your-org>.containers.tinfoil.dev   # actual domain from `tinfoil container get`
+DOMAIN=<paste from tinfoil container get>
 
 curl -s https://$DOMAIN/status | jq
 
@@ -130,8 +130,8 @@ After the bar finishes, the in-enclave sim exits, the container stops. The s3 da
 ## 7. plot the trajectory
 
 ```bash
-python view.py --bucket $BUCKET           # list runs in the bucket
-python view.py --bucket $BUCKET --latest  # plot most recent → trajectory.png
+python view.py --bucket $S3_BUCKET           # list runs in the bucket
+python view.py --bucket $S3_BUCKET --latest  # plot most recent → trajectory.png
 open trajectory.png
 ```
 
@@ -163,5 +163,5 @@ The new run reuses the saved numpy rng state — resumed checkpoints are byte-id
 ```bash
 tinfoil container stop   persistent-storage-sim   # pauses, keeps state
 tinfoil container delete persistent-storage-sim   # destroys
-aws s3 rm --recursive s3://$BUCKET/persistent-storage/   # nuke runs
+aws s3 rm --recursive s3://$S3_BUCKET/persistent-storage/   # nuke runs
 ```

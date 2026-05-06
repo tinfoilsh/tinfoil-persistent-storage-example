@@ -38,10 +38,10 @@ container/
   sim.py           random walk + checkpointing loop
   storage.py       boto3 wrapper (write/load)
   server.py        /health + /status
+  Dockerfile       python:3.13-slim — built by tinfoil-build.yml github action
   requirements.txt
 view.py            local — pulls all checkpoints from s3, plots trajectory.png
 status.py          local — colored per-phase progress bar
-Dockerfile         python:3.13-slim — built by the tinfoil-build.yml github action
 tinfoil-config.yml cpus 2 / mem 8192, AWS creds as secrets, exposes /health + /status
 guide.md           full walkthrough
 ```

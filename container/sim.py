@@ -5,9 +5,9 @@ visible regime shifts when plotted, similar to how training metrics show
 distinct phases (warmup, steady-state, LR decay, late-stage cycling).
 
 A checkpoint is written to S3 at each phase boundary. On startup, if
-RESUME_FROM_CHECKPOINT and RUN_ID are set, the sim loads that checkpoint and
-continues from the start of the next phase using the persisted RNG state, so
-runs are deterministic across resumes.
+`--resume-from RUN_ID:N` is passed, the sim loads checkpoint N and continues
+from the start of phase N+1 using the persisted RNG state, so resumes are
+deterministic.
 """
 
 import argparse

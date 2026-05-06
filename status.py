@@ -1,7 +1,7 @@
 """Watch a running sim through /status with a colored per-phase progress bar.
 
-    python status.py                     # localhost:8080
-    python status.py --interval 1.0      # poll less often
+    python status.py --url https://<container>.containers.tinfoil.dev/status
+    python status.py --url <url> --interval 1.0
 """
 
 import argparse
@@ -43,7 +43,7 @@ def make_progress() -> Progress:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--url", default="http://localhost:8080/status")
+    ap.add_argument("--url", required=True, help="full /status URL of the deployed container")
     ap.add_argument("--interval", type=float, default=0.25)
     args = ap.parse_args()
 
