@@ -75,6 +75,8 @@ def run_phase(
         step = start_step + t + 1
         traj.append([step, float(pos[0]), float(pos[1])])
         server.update(step=step)
+        # sleep 10ms
+        time.sleep(10)
     return pos, traj, start_step + phase["steps"]
 
 

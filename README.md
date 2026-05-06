@@ -41,6 +41,18 @@ To resume: set `RUN_ID=<original>` and `RESUME_FROM_CHECKPOINT=2`. Sim loads che
 
 Next: wire up the tinfoil-buckets backend, then the custom-encryption one. Both will reuse `sim.py` and just swap out `storage.py`.
 
+## Run it locally
+
+Takes ~3 min with the default `STEP_DELAY_MS=20` pacing (set to 0 in `.env` to flat-out finish in seconds).
+
+1. `cp .env.example .env` and fill in your AWS keys + bucket name.
+2. Build the image — `docker build -t sim .`
+3. Run it — `docker run --rm -p 8080:8080 --env-file .env sim`. First log line prints the `run_id` — copy it.
+4. In another terminal, watch live progress — `python status.py`. Exits when sim is done.
+5. Plot the trajectory — `pip install -r requirements.txt && python view.py --bucket $S3_BUCKET --run-id <run_id>`. Writes `trajectory.png`.
+
+To resume from a checkpoint instead of starting fresh: uncomment `RUN_ID=<previous>` and `RESUME_FROM_CHECKPOINT=2` in `.env`, run step 3 again. You'll see `resumed run_id=... next phase=converge`.
+
 ## Check s3 works
 
 Fill in `.env` (copy from `.env.example`) and run a round-trip — should print `hi`.
