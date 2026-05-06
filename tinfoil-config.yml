@@ -1,19 +1,28 @@
 # Tinfoil Container Configuration
-# After creating a repo from this template, replace OWNER/REPO below with your
-# GitHub path (e.g. ghcr.io/tinfoilsh/my-app). The build workflow rewrites the
-# digest on every tagged release — you don't need to touch the @sha256 part.
+# The image's @sha256:... is rewritten by tinfoil-build.yml on each tagged
+# release — leave it alone. Edit env values + secrets here as needed.
 #
 # Full reference: https://docs.tinfoil.sh/containers/configuration
 
 cvm-version: 0.7.5
-cpus: 1
-memory: 1024
+cpus: 2
+memory: 8192
 
 containers:
-  - name: "app"
-    image: "ghcr.io/OWNER/REPO:placeholder"
+  - name: "sim"
+    image: "ghcr.io/tinfoilsh/tinfoil-persistent-storage-example@sha256:bfae2dcbe03bcc0bdb3141ea3cbedcc8a4f568f9150f181c918be8cf9b45bad5" # v0.1.0
+    env:
+      - PORT: "8080"
+      - AWS_REGION: "us-east-2"
+      - S3_BUCKET: "tinfoil-demo-579421472636-us-east-2-an"
+    # To resume an existing run, set:
+    #   command: ["--resume-from", "2026-05-06T04-43-46Z:2"]
+    secrets:
+      - AWS_ACCESS_KEY_ID
+      - AWS_SECRET_ACCESS_KEY
 
 shim:
   upstream-port: 8080
   paths:
-    - /*
+    - /health
+    - /status

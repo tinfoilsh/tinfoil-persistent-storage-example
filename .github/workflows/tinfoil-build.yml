@@ -59,7 +59,7 @@ jobs:
         env:
           SOURCE_DATE_EPOCH: 0
         with:
-          context: .
+          context: ./container
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

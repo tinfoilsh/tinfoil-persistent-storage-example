@@ -1,37 +1,89 @@
-# Tinfoil Public Containers Template
+# Simple persistent storage example
 
-A GitHub template for [Tinfoil Containers](https://docs.tinfoil.sh/containers/overview) where the image is **built from this repo** on every tagged release. Use this when your container's source lives alongside its deployment config.
+Tinfoil containers are ephemeral. This example shows how to checkpoint long-running work to S3 to avoid losing results, and to restart from a checkpoint.
 
-This only works for **public repos**.
+The workload is a mock 4-phase random walk (explore → drift → converge → oscillate) that writes a checkpoint to S3 at every phase boundary. Restartable from any checkpoint.
 
-If you need to deploy a private image, use the [tinfoil-containers-template](https://github.com/tinfoilsh/tinfoil-containers-template) instead.
+Deploys in **[debug mode](https://docs.tinfoil.sh/containers/debug-mode)** by default — SSH access + container logs, no attestation. Use this for iteration and testing. Switch to production mode (`--debug false`) once you're ready — that's where the real security guarantees (attestation, no SSH, no logs) kick in.
 
-## What's inside
+## Quick start
 
-- `main.go` — a tiny Go HTTP server that responds with `Hello from a Tinfoil Container!`
-- `Dockerfile` — multi-stage build, statically linked, no extras
-- `tinfoil-config.yml` — the enclave config; the digest is rewritten by CI
-- `.github/workflows/tinfoil-build.yml` — builds the image, updates `tinfoil-config.yml`, pushes the version tag
-- `.github/workflows/tinfoil-release.yml` — measures the pinned image and publishes the attestation
+Follow **[guide.md](./guide.md)** for the full walkthrough — aws setup, tinfoil secrets, tag, deploy.
 
-## Use it
+The short version (assuming aws + tinfoil are already set up):
 
-1. Click **[Use this template](https://github.com/tinfoilsh/tinfoil-public-containers-template/generate)** → **Create a new repository** (must be public).
-2. In your new repo, edit `tinfoil-config.yml` and replace `OWNER/REPO` with your GitHub path (e.g. `ghcr.io/your-org/your-repo`). Commit.
-3. In the **Actions** tab, run the **Tinfoil Container Build** workflow and pass a version like `v0.0.1`.
-4. The workflow:
-   - Builds and pushes the image to `ghcr.io/<owner>/<repo>`
-   - Updates `tinfoil-config.yml` with the new digest via a self-merging PR
-   - Creates the version tag
-   - Triggers the release workflow, which measures the image and publishes the attestation
-5. Go to the [Tinfoil Dashboard](https://dash.tinfoil.sh) → **Containers** → **Deploy**, select your repo and tag, and deploy.
+1. Edit `tinfoil-config.yml` — set `S3_BUCKET` and `AWS_REGION`.
+2. Push aws creds + your SSH key to your tinfoil org once:
+   - `tinfoil secret create AWS_ACCESS_KEY_ID --value-file -` (and same for `AWS_SECRET_ACCESS_KEY`)
+   - `tinfoil ssh-key create laptop --public-key-file ~/.ssh/id_ed25519.pub`
+3. Tag a release — `gh workflow run tinfoil-build.yml -f version=v0.1.0 --ref $(git branch --show-current)`. Wait for the actions, then `git pull`.
+4. Create the container in debug mode — `tinfoil container create persistent-storage-sim --repo <owner>/<repo> --tag v0.1.0 --debug --ssh-key laptop --secret AWS_ACCESS_KEY_ID --secret AWS_SECRET_ACCESS_KEY`. Domain will be `<name>.debug.<org>.containers.tinfoil.dev`.
+5. Watch — `python status.py --url https://<domain>/status`. To shell in: `ssh -p <port> root@console.tinfoil.sh` (port shown in `tinfoil container get`).
+6. Plot — `python view.py --bucket $S3_BUCKET --latest`.
 
-Once running, your container is reachable at `https://<container-name>.<org>.containers.tinfoil.dev`.
+## What this looks like
 
-## Updating
+`python status.py` — colored per-phase progress bar, ticks through `explore → drift → converge → oscillate`, prints the saved checkpoint path after each phase:
 
-Make changes, commit, then re-run **Tinfoil Container Build** with a fresh version (e.g. `v0.0.2`). Click **Update** in the dashboard once the tag exists.
+![status.py output](public/status.png)
 
-## Documentation
+`python view.py --bucket $S3_BUCKET` — list every run in the bucket, then `--latest` to render the most recent:
 
-[docs.tinfoil.sh/containers](https://docs.tinfoil.sh/containers/overview)
+![view.py listing + plot](public/view.png)
+
+The output `trajectory.png` — color-coded by phase. Below is a 2-checkpoint run (interrupted before `converge`), to show what an in-progress trajectory looks like.
+
+![trajectory plot](public/checkpoint2.png)
+
+## Layout
+
+```
+container/
+  sim.py           random walk + checkpointing loop
+  storage.py       boto3 wrapper (write/load)
+  server.py        /health + /status
+  Dockerfile       python:3.13-slim — built by tinfoil-build.yml github action
+  requirements.txt
+view.py            local — pulls all checkpoints from s3, plots trajectory.png
+status.py          local — colored per-phase progress bar
+tinfoil-config.yml cpus 2 / mem 8192, AWS creds as secrets, exposes /health + /status
+guide.md           full walkthrough
+```
+
+Checkpoints land at `s3://$S3_BUCKET/persistent-storage/{run_id}/checkpoint-{N}.json` plus a `latest.json` pointer. `run_id` is a UTC timestamp (`YYYY-MM-DDTHH-MM-SSZ`).
+
+To resume: set `command: ["--resume-from", "<run_id>:N"]` in `tinfoil-config.yml`, tag a new release, then `tinfoil container relaunch ... --tag v0.1.1`. Sim loads checkpoint N, restores the numpy rng state, and picks up at the start of phase N+1. Because the rng is restored, the resumed run is byte-identical to an uninterrupted one.
+
+## Check s3 works
+
+`.env` (copy from `.env.example`) is handy throughout — sourcing it gives you `$S3_BUCKET`, `$AWS_REGION`, and your aws creds. Useful for both the aws CLI and for `tinfoil secret create` later.
+
+```bash
+cp .env.example .env
+$EDITOR .env
+set -a && source .env && set +a
+
+# round-trip should print `hi`
+echo hi | aws s3 cp - s3://$S3_BUCKET/_smoke && aws s3 cp s3://$S3_BUCKET/_smoke - && aws s3 rm s3://$S3_BUCKET/_smoke
+```
+
+If that errors, your aws creds or bucket name are off. Fix that before deploying.
+
+## Promote to prod
+
+Debug mode is for iteration and testing. When you're ready for the real security guarantees, switch to production:
+
+```bash
+tinfoil container relaunch persistent-storage-sim --debug false
+```
+
+Production mode gives you attestation (verified enclave) and drops SSH + container logs. Domain moves back to `<name>.<org>.containers.tinfoil.dev`.
+
+## Future work
+
+Currently this example uses a simple S3 storage.
+
+There are two more possible options if the storage needs to be encrypted:
+
+1. **Tinfoil buckets** (beta) — manages the encryption for you. [github](https://github.com/tinfoilsh/tinfoil-buckets)
+2. **Custom s3 + caller-owned encryption** — more work, but specific control over how things are stored
