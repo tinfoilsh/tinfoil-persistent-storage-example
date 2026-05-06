@@ -16,9 +16,8 @@ containers:
       - PORT: "8080"
       - AWS_REGION: "us-east-1"
       - S3_BUCKET: "REPLACE-WITH-YOUR-BUCKET"
-      # To resume a previous run, also set RUN_ID and RESUME_FROM_CHECKPOINT
-      # (e.g. RUN_ID: "abc-123", RESUME_FROM_CHECKPOINT: "2"). Leaving these
-      # unset starts a fresh run with a generated UUID.
+    # To resume an existing run, set:
+    #   command: ["--resume-from", "2026-05-06T04-43-46Z:2"]
     secrets:
       - AWS_ACCESS_KEY_ID
       - AWS_SECRET_ACCESS_KEY

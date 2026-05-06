@@ -2,6 +2,20 @@
 
 Tinfoil containers are ephemeral.
 
+simple s3 storage.
+
+# Quick start
+
+Mock sim runs a multi-phase random walk for funsies
+
+run sim docker
+
+watch progress w/ status
+
+when it's done, use view
+
+# OLD === TODO: clean up
+
 ## Want to show a few different implementations:
 
 1. Simple s3 storage
@@ -35,9 +49,13 @@ Dockerfile         python:3.13-slim, runs sim.py
 tinfoil-config.yml cpus 2 / mem 8192, AWS creds as secrets, exposes /health + /status
 ```
 
-Checkpoints land at `s3://$S3_BUCKET/{run_id}/checkpoint-{N}.json` plus a `latest.json` pointer. Each one stores the run_id, phase completed, step count, current position, the numpy rng state, and the trajectory points from that phase.
+Checkpoints land at `s3://$S3_BUCKET/persistent-storage/{run_id}/checkpoint-{N}.json` plus a `latest.json` pointer. `run_id` is a UTC timestamp (`YYYY-MM-DDTHH-MM-SSZ`). Each checkpoint stores the run_id, phase completed, step count, current position, the numpy rng state, and the trajectory points from that phase.
 
-To resume: set `RUN_ID=<original>` and `RESUME_FROM_CHECKPOINT=2`. Sim loads checkpoint 2, restores rng state, and picks up at the start of phase 3. Because the rng is restored, the resumed run is identical to the original — handy for verifying nothing got corrupted.
+To resume: pass `--resume-from RUN_ID:N` as a CLI arg. Sim loads checkpoint N, restores rng state, and picks up at the start of phase N+1. Because the rng is restored, the resumed run is identical to the original — handy for verifying nothing got corrupted.
+
+```bash
+docker run --rm -p 8080:8080 --env-file .env sim --resume-from 2026-05-06T04-43-46Z:2
+```
 
 Next: wire up the tinfoil-buckets backend, then the custom-encryption one. Both will reuse `sim.py` and just swap out `storage.py`.
 

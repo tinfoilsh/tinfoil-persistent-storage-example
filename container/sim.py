@@ -10,6 +10,7 @@ continues from the start of the next phase using the persisted RNG state, so
 runs are deterministic across resumes.
 """
 
+import argparse
 import datetime
 import os
 import sys
@@ -113,16 +114,35 @@ def restore_rng(state: dict) -> np.random.Generator:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Mock training-like 2D random walk with S3 checkpointing."
+    )
+    parser.add_argument(
+        "--resume-from",
+        metavar="RUN_ID:N",
+        help="Resume run RUN_ID from checkpoint N (e.g. 2026-05-06T04-43-46Z:2). "
+        "Omit for a fresh run.",
+    )
+    args = parser.parse_args()
+
     storage.bucket()  # fail fast if S3_BUCKET is missing
 
-    resume_n_raw = os.environ.get("RESUME_FROM_CHECKPOINT", "").strip()
-    run_id = os.environ.get("RUN_ID", "").strip() or None
-
-    if resume_n_raw:
-        if not run_id:
-            print("ERROR: RESUME_FROM_CHECKPOINT requires RUN_ID", file=sys.stderr)
+    if args.resume_from:
+        if ":" not in args.resume_from:
+            print(
+                "ERROR: --resume-from must be RUN_ID:N (e.g. 2026-05-06T04-43-46Z:2)",
+                file=sys.stderr,
+            )
             sys.exit(2)
-        resume_n = int(resume_n_raw)
+        run_id, n_str = args.resume_from.split(":", 1)
+        try:
+            resume_n = int(n_str)
+        except ValueError:
+            print(
+                f"ERROR: checkpoint number must be an int, got {n_str!r}",
+                file=sys.stderr,
+            )
+            sys.exit(2)
         ckpt = storage.load_checkpoint(run_id, resume_n)
         start_phase_idx = ckpt["phase_completed_index"] + 1
         start_step = ckpt["step"]
@@ -140,7 +160,7 @@ def main() -> None:
             flush=True,
         )
     else:
-        run_id = run_id or datetime.datetime.now(datetime.timezone.utc).strftime(
+        run_id = datetime.datetime.now(datetime.timezone.utc).strftime(
             "%Y-%m-%dT%H-%M-%SZ"
         )
         start_phase_idx = 0
