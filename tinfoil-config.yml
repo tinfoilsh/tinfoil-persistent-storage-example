@@ -1,28 +1,12 @@
-# Tinfoil Container Configuration
-# The image's @sha256:... is rewritten by tinfoil-build.yml on each tagged
-# release — leave it alone. Edit env values + secrets here as needed.
-#
-# Full reference: https://docs.tinfoil.sh/containers/configuration
-
 cvm-version: 0.7.5
 cpus: 2
 memory: 8192
 
 containers:
-  - name: "sim"
-    image: "ghcr.io/tinfoilsh/tinfoil-persistent-storage-example@sha256:b3d59c7364141613d151b92979e0a77c71f049476bed0a09a8b9fec4bb7eb7eb" # v0.2.0
-    env:
-      - PORT: "8080"
-      - AWS_REGION: "us-east-2"
-      - S3_BUCKET: "tinfoil-demo-579421472636-us-east-2-an"
-    # To resume an existing run, set:
-    #   command: ["--resume-from", "2026-05-06T04-43-46Z:2"]
-    secrets:
-      - AWS_ACCESS_KEY_ID
-      - AWS_SECRET_ACCESS_KEY
+  - name: "test"
+    image: "ghcr.io/atlaie/prepilot-vllm-lens:latest@sha256:5f4bee435fb8b6c1be2140acf8f669a4c3a99a5fc5a9234e23223d2f0fe0c268"
 
 shim:
-  upstream-port: 8080
+  upstream-port: 8000
   paths:
-    - /health
-    - /status
+    - /*
