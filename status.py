@@ -29,13 +29,34 @@ def poll(url: str) -> dict | None:
         return None
 
 
+def fmt_bytes(n: int) -> str:
+    if n < 1024:
+        return f"{n} B"
+    if n < 1024 ** 2:
+        return f"{n / 1024:.1f} KB"
+    if n < 1024 ** 3:
+        return f"{n / 1024 ** 2:.1f} MB"
+    return f"{n / 1024 ** 3:.2f} GB"
+
+
+def mpu_indicator(state: dict) -> str:
+    if state.get("mpu_state") == "uploading":
+        return "[bold blue]⇪ flushing part[/]"
+    return "[dim]· idle           [/]"
+
+
 def make_progress() -> Progress:
     return Progress(
         TextColumn("  "),
-        BarColumn(bar_width=42, complete_style="cyan", finished_style="green"),
+        BarColumn(bar_width=32, complete_style="cyan", finished_style="green"),
         TextColumn("[bold]{task.percentage:>3.0f}%[/]"),
         TextColumn("[dim]({task.completed:>4}/{task.total})[/]"),
         TimeElapsedColumn(),
+        TextColumn("{task.fields[mpu_ind]}"),
+        TextColumn(
+            "[dim]parts={task.fields[mpu_parts]:>2} "
+            "streamed={task.fields[mpu_sent]:>9}[/]"
+        ),
         console=console,
         transient=False,
     )
@@ -76,9 +97,11 @@ def main() -> int:
         task_id = None
         n = final_state.get("checkpoints_written", 0)
         run_id = final_state.get("run_id", "")
+        sent = fmt_bytes(final_state.get("mpu_bytes_total", 0))
         console.print(
             f"[green]✓[/] Completed phase [bold]{seen_phase}[/]. "
-            f"Saved to [dim]{run_id}/checkpoint-{n}.json[/]"
+            f"Saved [dim]{run_id}/checkpoint-{n}.json[/] + "
+            f"[dim]phase-{n}.bin[/] [dim](run total streamed: {sent})[/]"
         )
         console.print()
 
@@ -97,18 +120,31 @@ def main() -> int:
                 )
                 progress = make_progress()
                 progress.start()
-                task_id = progress.add_task("", total=state.get("phase_total") or 1)
+                task_id = progress.add_task(
+                    "",
+                    total=state.get("phase_total") or 1,
+                    mpu_ind=mpu_indicator(state),
+                    mpu_parts=state.get("mpu_part_count", 0),
+                    mpu_sent=fmt_bytes(state.get("mpu_bytes_total", 0)),
+                )
             seen_phase = current_phase
 
         if progress is not None and task_id is not None:
-            progress.update(task_id, completed=state.get("phase_step") or 0)
+            progress.update(
+                task_id,
+                completed=state.get("phase_step") or 0,
+                mpu_ind=mpu_indicator(state),
+                mpu_parts=state.get("mpu_part_count", 0),
+                mpu_sent=fmt_bytes(state.get("mpu_bytes_total", 0)),
+            )
 
         if state.get("done"):
             finalize(state)
             console.print("[bold green]== Run complete ==[/]")
             console.print(
                 f"  {state.get('checkpoints_written')} checkpoint(s), "
-                f"{state.get('step')} steps"
+                f"{state.get('step')} steps, "
+                f"{fmt_bytes(state.get('mpu_bytes_total', 0))} streamed"
             )
             return 0
 
