@@ -1,18 +1,41 @@
-"""Mock training-style 2D random walk.
+"""Mock training-style 2D random walk with streaming activations to S3.
 
 Four phases with distinct dynamics — chosen so the resulting trajectory has
 visible regime shifts when plotted, similar to how training metrics show
 distinct phases (warmup, steady-state, LR decay, late-stage cycling).
 
-A checkpoint is written to S3 at each phase boundary. On startup, if
-`--resume-from RUN_ID:N` is passed, the sim loads checkpoint N and continues
-from the start of phase N+1 using the persisted RNG state, so resumes are
-deterministic.
+Per phase we produce TWO objects in S3:
+
+    checkpoint-{N}.json   small: rng state, trajectory (step,x,y), metadata.
+                          Single PUT at phase end. Used for resume + view.
+    phase-{N}.bin         large: per-step "activations" baggage. Streamed via
+                          S3 multipart upload as the sim runs — each step
+                          appends bytes to an in-memory buffer, and when the
+                          buffer crosses PART_SIZE_MB the same loop blocks
+                          on upload_part before continuing. That is the real
+                          streaming-with-backpressure path: nothing is hidden
+                          behind a thread or queue, the sim itself pauses
+                          while S3 ingests the part.
+
+Per-step record in phase-{N}.bin (little-endian, no padding):
+    dim         int32           — number of activations this step
+    activations float32 * dim   — payload
+
+`dim` is jittered per step (BAGGAGE_DIM_BASE ± BAGGAGE_DIM_JITTER/2) so parts
+contain different numbers of steps — the demo exercises buffer policy on
+genuinely uneven records, not a fixed stride.
+
+On startup, if `--resume-from RUN_ID:N` is passed, the sim loads the JSON
+checkpoint N and continues from the start of phase N+1 with the persisted RNG
+state, so resumes are deterministic. The streamed .bin files for already-
+completed phases are not re-read — they're pure baggage, useful only as the
+demonstration that streaming worked.
 """
 
 import argparse
 import datetime
 import os
+import struct
 import sys
 import time
 
@@ -46,6 +69,10 @@ PHASES = [
     },
 ]
 
+BAGGAGE_DIM_BASE = int(os.environ.get("BAGGAGE_DIM_BASE", "8192"))
+BAGGAGE_DIM_JITTER = int(os.environ.get("BAGGAGE_DIM_JITTER", "4096"))
+PART_SIZE_BYTES = int(float(os.environ.get("PART_SIZE_MB", "5")) * 1024 * 1024)
+
 
 def step_position(
     pos: np.ndarray, phase: dict, t_in_phase: int, rng: np.random.Generator
@@ -64,8 +91,42 @@ def step_position(
     return pos + delta
 
 
+def make_activations(rng: np.random.Generator) -> bytes:
+    """One per-step record: int32 dim, then float32[dim]. Dim is jittered."""
+    half = BAGGAGE_DIM_JITTER // 2
+    dim = BAGGAGE_DIM_BASE + int(rng.integers(-half, half + 1))
+    if dim < 1:
+        dim = 1
+    payload = rng.standard_normal(dim).astype(np.float32, copy=False).tobytes()
+    return struct.pack("<i", dim) + payload
+
+
+def flush_part(
+    key: str, upload_id: str, part_number: int, buf: bytearray, parts: list
+) -> None:
+    """Synchronously upload one part and update /status around the call."""
+    body = bytes(buf)
+    server.update(mpu_state="uploading")
+    t0 = time.monotonic()
+    parts.append(storage.upload_part(key, upload_id, part_number, body))
+    elapsed_ms = int((time.monotonic() - t0) * 1000)
+    snap = server.snapshot()
+    server.update(
+        mpu_state="idle",
+        mpu_part_count=part_number,
+        mpu_last_part_ms=elapsed_ms,
+        mpu_last_part_bytes=len(body),
+        mpu_bytes_total=snap.get("mpu_bytes_total", 0) + len(body),
+    )
+    buf.clear()
+
+
 def run_phase(
-    phase_idx: int, start_step: int, start_pos: np.ndarray, rng: np.random.Generator
+    phase_idx: int,
+    start_step: int,
+    start_pos: np.ndarray,
+    rng: np.random.Generator,
+    run_id: str,
 ):
     phase = PHASES[phase_idx]
     server.update(
@@ -73,16 +134,48 @@ def run_phase(
         phase_index=phase_idx,
         phase_step=0,
         phase_total=phase["steps"],
+        mpu_part_count=0,
+        mpu_last_part_ms=0,
+        mpu_last_part_bytes=0,
     )
+
+    blob_key = storage.phase_blob_key(run_id, phase_idx + 1)
+    upload_id = storage.start_multipart(blob_key)
+    parts: list[dict] = []
+    buf = bytearray()
+    part_number = 0
+
     pos = start_pos.copy()
     traj = []
-    for t in range(phase["steps"]):
-        pos = step_position(pos, phase, t, rng)
-        step = start_step + t + 1
-        traj.append([step, float(pos[0]), float(pos[1])])
-        server.update(step=step, phase_step=t + 1)
-        # mock delay - 20ms/step
-        time.sleep(0.02)
+    try:
+        for t in range(phase["steps"]):
+            pos = step_position(pos, phase, t, rng)
+            step = start_step + t + 1
+            traj.append([step, float(pos[0]), float(pos[1])])
+            buf.extend(make_activations(rng))
+            server.update(step=step, phase_step=t + 1)
+
+            if len(buf) >= PART_SIZE_BYTES:
+                part_number += 1
+                flush_part(blob_key, upload_id, part_number, buf, parts)
+
+            # mock delay - 20ms/step
+            time.sleep(0.02)
+
+        # final part: any size (S3 only enforces the 5 MB minimum on non-last
+        # parts). Skip if buf is empty AND we already uploaded ≥1 part.
+        if buf or not parts:
+            part_number += 1
+            flush_part(blob_key, upload_id, part_number, buf, parts)
+
+        storage.complete_multipart(blob_key, upload_id, parts)
+    except BaseException:
+        # leave no orphaned parts on the bucket if the sim dies mid-phase
+        try:
+            storage.abort_multipart(blob_key, upload_id)
+        finally:
+            raise
+
     return pos, traj, start_step + phase["steps"]
 
 
@@ -193,7 +286,7 @@ def main() -> None:
         return
 
     for phase_idx in range(start_phase_idx, len(PHASES)):
-        pos, traj, step = run_phase(phase_idx, step, pos, rng)
+        pos, traj, step = run_phase(phase_idx, step, pos, rng, run_id)
         n_written += 1
         ckpt = make_checkpoint(run_id, n_written, phase_idx, step, pos, rng, traj)
         storage.write_checkpoint(run_id, n_written, ckpt)
