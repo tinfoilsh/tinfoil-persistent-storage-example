@@ -14,6 +14,12 @@ _state = {
     "phase_index": -1,
     "checkpoints_written": 0,
     "done": False,
+    # multipart-upload telemetry — updated by sim.py around each upload_part call
+    "mpu_state": "idle",            # "idle" | "uploading"
+    "mpu_part_count": 0,            # parts uploaded in the current phase
+    "mpu_bytes_total": 0,           # bytes uploaded across all phases this run
+    "mpu_last_part_ms": 0,
+    "mpu_last_part_bytes": 0,
 }
 _lock = threading.Lock()
 
