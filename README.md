@@ -32,6 +32,10 @@ The short version (assuming aws + tinfoil are already set up):
 
 ![status.py output](public/status.png)
 
+In S3 you'll see, per run: small JSON checkpoints next to ~80 MB streamed `phase-N.bin` blobs:
+
+![s3 listing after a run](public/s3.png)
+
 `python view.py --bucket $S3_BUCKET` — list every run in the bucket, then `--latest` to render the most recent:
 
 ![view.py listing + plot](public/view.png)
