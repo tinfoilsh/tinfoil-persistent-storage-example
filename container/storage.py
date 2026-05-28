@@ -19,8 +19,7 @@ from botocore.config import Config
 
 PREFIX = "persistent-storage/"
 
-# local buckets endpoint
-SIDECAR_ENDPOINT = "http://buckets:9000"
+SIDECAR_ENDPOINT = "http://localhost:9000"
 
 # placeholder — sidecar ignores this
 BUCKET = "mock"
