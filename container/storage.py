@@ -13,11 +13,17 @@ The PREFIX constant is duplicated in view.py — keep them in sync.
 """
 
 import json
-import os
 
 import boto3
+from botocore.config import Config
 
 PREFIX = "persistent-storage/"
+
+# buckets endpoint
+SIDECAR_ENDPOINT = "http://buckets:9000"
+
+# dummy
+SIDECAR_BUCKET = "tinfoil-buckets"
 
 _client = None
 
@@ -25,16 +31,19 @@ _client = None
 def s3():
     global _client
     if _client is None:
-        endpoint = os.environ.get("S3_ENDPOINT_URL") or None
-        _client = boto3.client("s3", endpoint_url=endpoint)
+        _client = boto3.client(
+            "s3",
+            endpoint_url=SIDECAR_ENDPOINT,
+            region_name="us-east-2",
+            config=Config(s3={"addressing_style": "path"}),
+            aws_access_key_id="tinfoil-sidecar",
+            aws_secret_access_key="tinfoil-sidecar",
+        )
     return _client
 
 
 def bucket() -> str:
-    b = os.environ.get("S3_BUCKET")
-    if not b:
-        raise RuntimeError("S3_BUCKET env var is required")
-    return b
+    return SIDECAR_BUCKET
 
 
 def checkpoint_key(run_id: str, n: int) -> str:
