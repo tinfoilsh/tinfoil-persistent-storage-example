@@ -13,11 +13,17 @@ The PREFIX constant is duplicated in view.py — keep them in sync.
 """
 
 import json
-import os
 
 import boto3
+from botocore.config import Config
 
 PREFIX = "persistent-storage/"
+
+# local buckets endpoint
+SIDECAR_ENDPOINT = "http://buckets:9000"
+
+# placeholder — sidecar ignores this
+BUCKET = "mock"
 
 _client = None
 
@@ -25,16 +31,15 @@ _client = None
 def s3():
     global _client
     if _client is None:
-        endpoint = os.environ.get("S3_ENDPOINT_URL") or None
-        _client = boto3.client("s3", endpoint_url=endpoint)
+        _client = boto3.client(
+            "s3",
+            endpoint_url=SIDECAR_ENDPOINT,
+            region_name="us-east-2",
+            config=Config(s3={"addressing_style": "path"}),
+            aws_access_key_id="tinfoil-sidecar",
+            aws_secret_access_key="tinfoil-sidecar",
+        )
     return _client
-
-
-def bucket() -> str:
-    b = os.environ.get("S3_BUCKET")
-    if not b:
-        raise RuntimeError("S3_BUCKET env var is required")
-    return b
 
 
 def checkpoint_key(run_id: str, n: int) -> str:
@@ -52,14 +57,14 @@ def latest_key(run_id: str) -> str:
 def write_checkpoint(run_id: str, n: int, payload: dict) -> None:
     body = json.dumps(payload).encode("utf-8")
     s3().put_object(
-        Bucket=bucket(),
+        Bucket=BUCKET,
         Key=checkpoint_key(run_id, n),
         Body=body,
         ContentType="application/json",
     )
     pointer = json.dumps({"checkpoint_number": n}).encode("utf-8")
     s3().put_object(
-        Bucket=bucket(),
+        Bucket=BUCKET,
         Key=latest_key(run_id),
         Body=pointer,
         ContentType="application/json",
@@ -67,20 +72,20 @@ def write_checkpoint(run_id: str, n: int, payload: dict) -> None:
 
 
 def load_checkpoint(run_id: str, n: int) -> dict:
-    obj = s3().get_object(Bucket=bucket(), Key=checkpoint_key(run_id, n))
+    obj = s3().get_object(Bucket=BUCKET, Key=checkpoint_key(run_id, n))
     return json.loads(obj["Body"].read())
 
 
 def start_multipart(key: str, content_type: str = "application/octet-stream") -> str:
     resp = s3().create_multipart_upload(
-        Bucket=bucket(), Key=key, ContentType=content_type
+        Bucket=BUCKET, Key=key, ContentType=content_type
     )
     return resp["UploadId"]
 
 
 def upload_part(key: str, upload_id: str, part_number: int, body: bytes) -> dict:
     resp = s3().upload_part(
-        Bucket=bucket(),
+        Bucket=BUCKET,
         Key=key,
         UploadId=upload_id,
         PartNumber=part_number,
@@ -91,7 +96,7 @@ def upload_part(key: str, upload_id: str, part_number: int, body: bytes) -> dict
 
 def complete_multipart(key: str, upload_id: str, parts: list[dict]) -> None:
     s3().complete_multipart_upload(
-        Bucket=bucket(),
+        Bucket=BUCKET,
         Key=key,
         UploadId=upload_id,
         MultipartUpload={"Parts": parts},
@@ -99,4 +104,4 @@ def complete_multipart(key: str, upload_id: str, parts: list[dict]) -> None:
 
 
 def abort_multipart(key: str, upload_id: str) -> None:
-    s3().abort_multipart_upload(Bucket=bucket(), Key=key, UploadId=upload_id)
+    s3().abort_multipart_upload(Bucket=BUCKET, Key=key, UploadId=upload_id)

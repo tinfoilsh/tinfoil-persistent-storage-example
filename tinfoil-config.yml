@@ -1,5 +1,5 @@
 # Tinfoil Container Configuration
-# The image's @sha256:... is rewritten by tinfoil-build.yml on each tagged
+# The image's @sha256:... is rewritten by tinfoil-release.yml on each tagged
 # release — leave it alone. Edit env values + secrets here as needed.
 #
 # Full reference: https://docs.tinfoil.sh/containers/configuration
@@ -13,11 +13,17 @@ containers:
     image: "ghcr.io/tinfoilsh/tinfoil-persistent-storage-example@sha256:373a23f969680e8945847b82f2e281133e1e41a59d335e3fe95ad3c64f3bf182" # v0.5.0
     env:
       - PORT: "8080"
-      - AWS_REGION: "us-east-2"
-      - S3_BUCKET: "tinfoil-demo-579421472636-us-east-2-an"
     # To resume an existing run, set:
     #   command: ["--resume-from", "2026-05-06T04-43-46Z:2"]
+
+  - name: "buckets"
+    image: "ghcr.io/tinfoilsh/tinfoil-buckets-2@sha256:62751a0ab6d2b54689fc6c7e2893979880fdf4e089710938ac8b19fe40367455" # v0.0.1
+    env:
+      - PORT: "9000"
+      - BUCKET: "tinfoil-bucket-273354634536-us-east-2-an"
+      - AWS_REGION: "us-east-2"
     secrets:
+      - ENCRYPTION_KEY
       - AWS_ACCESS_KEY_ID
       - AWS_SECRET_ACCESS_KEY
 

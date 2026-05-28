@@ -218,8 +218,6 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    storage.bucket()  # fail fast if S3_BUCKET is missing
-
     if args.resume_from:
         if ":" not in args.resume_from:
             print(
