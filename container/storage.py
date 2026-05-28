@@ -19,11 +19,11 @@ from botocore.config import Config
 
 PREFIX = "persistent-storage/"
 
-# buckets endpoint
+# local buckets endpoint
 SIDECAR_ENDPOINT = "http://buckets:9000"
 
-# dummy
-SIDECAR_BUCKET = "tinfoil-buckets"
+# placeholder — sidecar ignores this
+BUCKET = "mock"
 
 _client = None
 
@@ -42,10 +42,6 @@ def s3():
     return _client
 
 
-def bucket() -> str:
-    return SIDECAR_BUCKET
-
-
 def checkpoint_key(run_id: str, n: int) -> str:
     return f"{PREFIX}{run_id}/checkpoint-{n}.json"
 
@@ -61,14 +57,14 @@ def latest_key(run_id: str) -> str:
 def write_checkpoint(run_id: str, n: int, payload: dict) -> None:
     body = json.dumps(payload).encode("utf-8")
     s3().put_object(
-        Bucket=bucket(),
+        Bucket=BUCKET,
         Key=checkpoint_key(run_id, n),
         Body=body,
         ContentType="application/json",
     )
     pointer = json.dumps({"checkpoint_number": n}).encode("utf-8")
     s3().put_object(
-        Bucket=bucket(),
+        Bucket=BUCKET,
         Key=latest_key(run_id),
         Body=pointer,
         ContentType="application/json",
@@ -76,20 +72,20 @@ def write_checkpoint(run_id: str, n: int, payload: dict) -> None:
 
 
 def load_checkpoint(run_id: str, n: int) -> dict:
-    obj = s3().get_object(Bucket=bucket(), Key=checkpoint_key(run_id, n))
+    obj = s3().get_object(Bucket=BUCKET, Key=checkpoint_key(run_id, n))
     return json.loads(obj["Body"].read())
 
 
 def start_multipart(key: str, content_type: str = "application/octet-stream") -> str:
     resp = s3().create_multipart_upload(
-        Bucket=bucket(), Key=key, ContentType=content_type
+        Bucket=BUCKET, Key=key, ContentType=content_type
     )
     return resp["UploadId"]
 
 
 def upload_part(key: str, upload_id: str, part_number: int, body: bytes) -> dict:
     resp = s3().upload_part(
-        Bucket=bucket(),
+        Bucket=BUCKET,
         Key=key,
         UploadId=upload_id,
         PartNumber=part_number,
@@ -100,7 +96,7 @@ def upload_part(key: str, upload_id: str, part_number: int, body: bytes) -> dict
 
 def complete_multipart(key: str, upload_id: str, parts: list[dict]) -> None:
     s3().complete_multipart_upload(
-        Bucket=bucket(),
+        Bucket=BUCKET,
         Key=key,
         UploadId=upload_id,
         MultipartUpload={"Parts": parts},
@@ -108,4 +104,4 @@ def complete_multipart(key: str, upload_id: str, parts: list[dict]) -> None:
 
 
 def abort_multipart(key: str, upload_id: str) -> None:
-    s3().abort_multipart_upload(Bucket=bucket(), Key=key, UploadId=upload_id)
+    s3().abort_multipart_upload(Bucket=BUCKET, Key=key, UploadId=upload_id)
