@@ -73,6 +73,36 @@ latest.json           — pointer to the highest N written
 
 To resume: set `command: ["--resume-from", "<run_id>:N"]` in `tinfoil-config.yml`, tag a new release, then `tinfoil container relaunch ... --tag v0.1.1`. Sim loads `checkpoint-N.json`, restores the numpy rng state, and picks up at the start of phase N+1. The `.bin` files for already-completed phases are not re-read — they're baggage. Because the rng is restored, the resumed run is byte-identical to an uninterrupted one.
 
+## Encrypted storage via the buckets sidecar
+
+`sim` doesn't talk to S3 directly. It writes through a second container,
+[`tinfoil-buckets-sidecar`](https://github.com/tinfoilsh/tinfoil-buckets-sidecar),
+that transparently AES-256-GCM-encrypts on PUT and decrypts on GET. Ciphertext
+is what lives in the bucket; plaintext only ever exists inside the CVM.
+
+The sidecar runs alongside `sim` in the same CVM on `localhost:9000`.
+`container/storage.py` is just a normal boto3 client pointed at that endpoint
+with dummy creds — the sidecar discards the SigV4 signature and uses its own
+AWS credentials to talk to the real bucket.
+
+Configured in `tinfoil-config.yml`:
+
+```yaml
+- name: "buckets"
+  image: "ghcr.io/tinfoilsh/tinfoil-buckets-sidecar@sha256:..."
+  env:
+    - PORT: "9000"
+    - BUCKET: "your-real-s3-bucket"
+    - AWS_REGION: "us-east-2"
+  secrets:
+    - ENCRYPTION_KEY # openssl rand -base64 32
+    - AWS_ACCESS_KEY_ID
+    - AWS_SECRET_ACCESS_KEY
+```
+
+To read the encrypted objects outside the CVM you can use the python client - it's setup to decrypt. Also see the
+[sidecar's guides](https://github.com/tinfoilsh/tinfoil-buckets-sidecar#usage) for more - you can use the AWS CLI.
+
 ## How the streaming works
 
 Each step appends a record (`int32 dim` + `float32[dim]`) to an in-memory buffer. `dim` is jittered per step (default 8192 ± 2048) so parts contain uneven numbers of steps — the demo exercises buffer policy on real variable-size records, not a fixed stride. When the buffer crosses `PART_SIZE_MB` (default 5 MB), the **same step loop** blocks on `upload_part` before continuing. No background thread, no queue — the sim's progress _is_ the upload's progress. If the network is slow, the sim is slow.
@@ -131,12 +161,3 @@ tinfoil container relaunch persistent-storage-sim --debug false
 ```
 
 Production mode gives you attestation (verified enclave) and drops SSH + container logs. Domain moves back to `<name>.<org>.containers.tinfoil.dev`.
-
-## Future work
-
-Currently this example uses a simple S3 storage.
-
-There are two more possible options if the storage needs to be encrypted:
-
-1. **Tinfoil buckets** (beta) — manages the encryption for you. [github](https://github.com/tinfoilsh/tinfoil-buckets-sidecar)
-2. **Custom s3 + caller-owned encryption** — more work, but specific control over how things are stored
