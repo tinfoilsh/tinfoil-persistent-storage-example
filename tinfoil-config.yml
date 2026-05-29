@@ -17,7 +17,7 @@ containers:
     #   command: ["--resume-from", "2026-05-06T04-43-46Z:2"]
 
   - name: "buckets"
-    image: "ghcr.io/tinfoilsh/tinfoil-buckets-2@sha256:9c445c8e848f6d7d24fdc83f4638452ad5f8d0386323266e59f42594a2104641" # v0.0.2
+    image: "ghcr.io/tinfoilsh/tinfoil-buckets-sidecar@sha256:7fd00873d80e9e597373d05ca896370e6b7ce26f168bc2f904618fa395559aff" # v0.0.3
     env:
       - PORT: "9000"
       - BUCKET: "tinfoil-bucket-273354634536-us-east-2-an"
