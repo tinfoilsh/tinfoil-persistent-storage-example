@@ -73,7 +73,7 @@ To resume: set `command: ["--resume-from", "<run_id>:N"]` in `tinfoil-config.yml
 
 ## How the streaming works
 
-Each step appends a record (`int32 dim` + `float32[dim]`) to an in-memory buffer. `dim` is jittered per step (default 8192 ± 2048) so parts contain uneven numbers of steps — the demo exercises buffer policy on real variable-size records, not a fixed stride. When the buffer crosses `PART_SIZE_MB` (default 5 MB), the **same step loop** blocks on `upload_part` before continuing. No background thread, no queue — the sim's progress *is* the upload's progress. If the network is slow, the sim is slow.
+Each step appends a record (`int32 dim` + `float32[dim]`) to an in-memory buffer. `dim` is jittered per step (default 8192 ± 2048) so parts contain uneven numbers of steps — the demo exercises buffer policy on real variable-size records, not a fixed stride. When the buffer crosses `PART_SIZE_MB` (default 5 MB), the **same step loop** blocks on `upload_part` before continuing. No background thread, no queue — the sim's progress _is_ the upload's progress. If the network is slow, the sim is slow.
 
 When the phase ends, the final part (any size — S3's 5 MB minimum is for non-last parts only) is uploaded and `complete_multipart_upload` finalizes the object. If anything raises mid-phase, `abort_multipart_upload` runs in a `finally` so we don't leave orphaned parts on the bucket.
 
@@ -81,12 +81,12 @@ When the phase ends, the final part (any size — S3's 5 MB minimum is for non-l
 
 ### Env knobs (set in `tinfoil-config.yml`)
 
-| var                  | default | what                                                |
-| -------------------- | ------- | --------------------------------------------------- |
-| `BAGGAGE_DIM_BASE`   | 8192    | mean activations per step (float32)                 |
-| `BAGGAGE_DIM_JITTER` | 4096    | per-step uniform jitter on `dim` (`base ± jitter/2`)|
-| `PART_SIZE_MB`       | 5       | buffer threshold for an MPU part flush              |
-| `SEED`               | unset   | optional numpy rng seed                             |
+| var                  | default | what                                                 |
+| -------------------- | ------- | ---------------------------------------------------- |
+| `BAGGAGE_DIM_BASE`   | 8192    | mean activations per step (float32)                  |
+| `BAGGAGE_DIM_JITTER` | 4096    | per-step uniform jitter on `dim` (`base ± jitter/2`) |
+| `PART_SIZE_MB`       | 5       | buffer threshold for an MPU part flush               |
+| `SEED`               | unset   | optional numpy rng seed                              |
 
 ### Lifecycle policy for orphaned parts
 
@@ -94,12 +94,14 @@ If a container OOMs or is force-killed, the `finally`-guarded abort can't run an
 
 ```json
 {
-  "Rules": [{
-    "ID": "abort-incomplete-mpu",
-    "Status": "Enabled",
-    "Filter": {"Prefix": "persistent-storage/"},
-    "AbortIncompleteMultipartUpload": {"DaysAfterInitiation": 1}
-  }]
+  "Rules": [
+    {
+      "ID": "abort-incomplete-mpu",
+      "Status": "Enabled",
+      "Filter": { "Prefix": "persistent-storage/" },
+      "AbortIncompleteMultipartUpload": { "DaysAfterInitiation": 1 }
+    }
+  ]
 }
 ```
 
@@ -134,5 +136,5 @@ Currently this example uses a simple S3 storage.
 
 There are two more possible options if the storage needs to be encrypted:
 
-1. **Tinfoil buckets** (beta) — manages the encryption for you. [github](https://github.com/tinfoilsh/tinfoil-buckets)
+1. **Tinfoil buckets** (beta) — manages the encryption for you. [github](https://github.com/tinfoilsh/tinfoil-buckets-sidecar)
 2. **Custom s3 + caller-owned encryption** — more work, but specific control over how things are stored
