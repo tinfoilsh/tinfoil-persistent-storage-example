@@ -10,6 +10,8 @@ PREFIX must stay in sync with container/storage.py.
 """
 
 import argparse
+import base64
+import functools
 import json
 import os
 import sys
@@ -18,6 +20,8 @@ import boto3
 import matplotlib.pyplot as plt
 from rich.console import Console
 from rich.table import Table
+
+import tinfoil_crypto
 
 PREFIX = "persistent-storage/"
 
@@ -36,6 +40,16 @@ def s3_client():
     return boto3.client("s3", endpoint_url=endpoint)
 
 
+@functools.lru_cache(maxsize=1)
+def master_key() -> bytes:
+    raw = os.environ.get("ENCRYPTION_KEY")
+    if not raw:
+        raise SystemExit(
+            "ENCRYPTION_KEY env var is required (same base64 32-byte key as the sidecar)"
+        )
+    return base64.b64decode(raw)
+
+
 def list_runs(client, bucket: str) -> list[dict]:
     """Return [{"run_id", "checkpoints": [int...]}, ...] sorted by run_id ascending."""
     paginator = client.get_paginator("list_objects_v2")
@@ -43,7 +57,7 @@ def list_runs(client, bucket: str) -> list[dict]:
     for page in paginator.paginate(Bucket=bucket, Prefix=PREFIX):
         for obj in page.get("Contents") or []:
             key = obj["Key"]
-            rest = key[len(PREFIX):]
+            rest = key[len(PREFIX) :]
             parts = rest.split("/", 1)
             if len(parts) != 2:
                 continue
@@ -51,19 +65,21 @@ def list_runs(client, bucket: str) -> list[dict]:
             if not fname.startswith("checkpoint-"):
                 continue
             try:
-                n = int(fname[len("checkpoint-"):].split(".json")[0])
+                n = int(fname[len("checkpoint-") :].split(".json")[0])
             except ValueError:
                 continue
             runs.setdefault(run_id, []).append(n)
     return [
-        {"run_id": rid, "checkpoints": sorted(ns)}
-        for rid, ns in sorted(runs.items())
+        {"run_id": rid, "checkpoints": sorted(ns)} for rid, ns in sorted(runs.items())
     ]
 
 
 def load_checkpoint(client, bucket: str, run_id: str, n: int) -> dict:
     obj = client.get_object(Bucket=bucket, Key=f"{PREFIX}{run_id}/checkpoint-{n}.json")
-    return json.loads(obj["Body"].read())
+    plaintext = tinfoil_crypto.decrypt_object(
+        master_key(), obj["Metadata"], obj["Body"].read()
+    )
+    return json.loads(plaintext)
 
 
 def render_listing(runs: list[dict]) -> None:
@@ -121,7 +137,9 @@ def plot_run(client, bucket: str, run_id: str, output: str) -> int:
 
     ax.scatter([0], [0], color="black", s=30, zorder=3, label="origin")
     ax.set_aspect("equal", adjustable="datalim")
-    ax.set_title(f"run_id={run_id}\n{total_points} steps across {len(nums)} checkpoint(s)")
+    ax.set_title(
+        f"run_id={run_id}\n{total_points} steps across {len(nums)} checkpoint(s)"
+    )
     ax.set_xlabel("x")
     ax.set_ylabel("y")
     ax.legend(loc="best")
