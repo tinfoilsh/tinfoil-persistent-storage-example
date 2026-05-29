@@ -10,14 +10,14 @@ memory: 8192
 
 containers:
   - name: "sim"
-    image: "ghcr.io/tinfoilsh/tinfoil-persistent-storage-example@sha256:373a23f969680e8945847b82f2e281133e1e41a59d335e3fe95ad3c64f3bf182" # v0.5.0
+    image: "ghcr.io/tinfoilsh/tinfoil-persistent-storage-example@sha256:0000000000000000000000000000000000000000000000000000000000000000" # placeholder - populated during release
     env:
       - PORT: "8080"
     # To resume an existing run, set:
     #   command: ["--resume-from", "2026-05-06T04-43-46Z:2"]
 
   - name: "buckets"
-    image: "ghcr.io/tinfoilsh/tinfoil-buckets-sidecar@sha256:7fd00873d80e9e597373d05ca896370e6b7ce26f168bc2f904618fa395559aff" # v0.0.3
+    image: "ghcr.io/tinfoilsh/tinfoil-buckets-sidecar@sha256:72d3fa901c933e62a92999c296c42eb709ca9425b582ff66b285a5c3dd6bda8a" # v0.0.4
     env:
       - PORT: "9000"
       - BUCKET: "tinfoil-bucket-273354634536-us-east-2-an"
