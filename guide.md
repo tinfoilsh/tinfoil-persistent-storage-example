@@ -9,10 +9,10 @@ The workload is a 4-phase mock random walk that checkpoints to S3 at every phase
 - an AWS account + a bucket
 - a tinfoil org with the **containers** product enabled
 - an SSH keypair (e.g. `~/.ssh/id_ed25519` — `ssh-keygen -t ed25519` if you don't have one). Used for SSHing into the debug container.
-- `aws`, `tinfoil`, `gh` clis on your laptop
+- `aws`, `tinfoil`, `gh`, `openssl` clis on your laptop
 - python 3.10+
 
-`.env` (copy from `.env.example`) is handy throughout — drops `$S3_BUCKET`, `$AWS_REGION`, and the aws creds into your shell so you can paste commands as-is:
+`.env` (copy from `.env.example`) is handy throughout — drops `$S3_BUCKET`, `$AWS_REGION`, the aws creds, and `$ENCRYPTION_KEY` into your shell so you can paste commands as-is:
 
 ```bash
 cp .env.example .env
@@ -40,16 +40,24 @@ echo hi | aws s3 cp - s3://$S3_BUCKET/_smoke && aws s3 cp s3://$S3_BUCKET/_smoke
 # should print "hi"
 ```
 
-## 2. push aws creds + ssh key to tinfoil
+## 2. push secrets + ssh key to tinfoil
 
-The container runs in an enclave — it needs access to the bucket. Tinfoil injects org-level secrets at boot. Names must match the `secrets:` list in `tinfoil-config.yml`.
+The sidecar (next section) needs three secrets: the bucket creds and an AES-256 master key. Generate the key once and put it in `.env` so the sidecar (inside the CVM) and `view.py` (on your laptop) share the same value:
+
+```bash
+echo "ENCRYPTION_KEY=$(openssl rand -base64 32)" >> .env
+set -a && source .env && set +a
+```
+
+Tinfoil injects org-level secrets at boot. Names must match the `secrets:` list in `tinfoil-config.yml`.
 
 ```bash
 tinfoil login
 tinfoil whoami    # confirm
 
-printf '%s' "$AWS_ACCESS_KEY_ID"     | tinfoil secret create AWS_ACCESS_KEY_ID --value-file -
+printf '%s' "$AWS_ACCESS_KEY_ID"     | tinfoil secret create AWS_ACCESS_KEY_ID     --value-file -
 printf '%s' "$AWS_SECRET_ACCESS_KEY" | tinfoil secret create AWS_SECRET_ACCESS_KEY --value-file -
+printf '%s' "$ENCRYPTION_KEY"        | tinfoil secret create ENCRYPTION_KEY        --value-file -
 ```
 
 (Use `tinfoil secret set <name> --value-file -` instead of `create` if they already exist.)
@@ -65,12 +73,19 @@ Pick any name (`laptop` here); you'll reference it at deploy time with `--ssh-ke
 
 ## 3. configure tinfoil-config.yml
 
-Open `tinfoil-config.yml` and set:
+Two containers run side-by-side in the same CVM:
 
-- `S3_BUCKET` → your bucket name
+- **`sim`** — the workload. Talks S3 to `http://localhost:9000` with dummy creds.
+- **`buckets`** — [tinfoil-buckets-sidecar](https://github.com/tinfoilsh/tinfoil-buckets-sidecar). Local S3-compatible proxy that AES-256-GCM-encrypts every PUT (and decrypts every GET) using `ENCRYPTION_KEY`, then forwards to the real bucket with the AWS creds. Only ciphertext ever leaves the enclave.
+
+So `sim` writes plaintext to the sidecar, the sidecar writes ciphertext to S3, and on your laptop `view.py` reads ciphertext back and decrypts with the same key.
+
+Open `tinfoil-config.yml` and, under the `buckets` block, set:
+
+- `BUCKET` → your bucket name
 - `AWS_REGION` → bucket's region
 
-The image line gets rewritten by the github action — leave the `@sha256:...` part alone.
+`sim`'s `image:` gets rewritten by the github action on tag — leave the `@sha256:...` placeholder alone. The sidecar's pinned digest is fine as-is.
 
 ```bash
 git commit -am "tinfoil-config: set bucket"
@@ -79,6 +94,7 @@ git commit -am "tinfoil-config: set bucket"
 ## 4. tag a release
 
 Triggers two github actions:
+
 - `tinfoil-build.yml` — builds the docker image, pushes to ghcr, pins the digest in `tinfoil-config.yml`, creates the tag
 - `tinfoil-release.yml` — measures the image and publishes attestation
 
@@ -99,7 +115,8 @@ tinfoil container create persistent-storage-sim \
   --debug \
   --ssh-key laptop \
   --secret AWS_ACCESS_KEY_ID \
-  --secret AWS_SECRET_ACCESS_KEY
+  --secret AWS_SECRET_ACCESS_KEY \
+  --secret ENCRYPTION_KEY
 ```
 
 Wait for it to come up:
@@ -146,6 +163,9 @@ Because you deployed with `--debug`, you can shell in any time to look at logs o
 ## 7. plot the trajectory
 
 ```bash
+# view.py decrypts with $ENCRYPTION_KEY — make sure .env is sourced
+set -a && source .env && set +a
+
 python view.py --bucket $S3_BUCKET           # list runs in the bucket
 python view.py --bucket $S3_BUCKET --latest  # plot most recent → trajectory.png
 open trajectory.png

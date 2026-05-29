@@ -1,6 +1,8 @@
-# Simple persistent storage example
+# Persistent (encrypted) storage example
 
-Tinfoil containers are ephemeral. This example shows how to checkpoint long-running work to S3 to avoid losing results, restart from a checkpoint, and stream a large per-phase payload to S3 as it's produced.
+Tinfoil containers are ephemeral. This example shows how to checkpoint long-running work to an encrypted S3 bucket to avoid losing results, restart from a checkpoint, and stream a large per-phase payload to S3 as it's produced.
+
+Behind the scenes it uses [tinfoil-buckets-sidecar](https://github.com/tinfoilsh/tinfoil-buckets-sidecar), a local server that exposes an S3 compatible API that handles encryption for you, using S3s encrypted client package.
 
 The workload is a mock 4-phase random walk (explore → drift → converge → oscillate). Each phase produces:
 
@@ -9,24 +11,25 @@ The workload is a mock 4-phase random walk (explore → drift → converge → o
 
 Restartable from any JSON checkpoint. The streamed .bin files are pure baggage — they exist to demonstrate the streaming path, not to be re-read on resume.
 
-Deploys in **[debug mode](https://docs.tinfoil.sh/containers/debug-mode)** by default — SSH access + container logs, no attestation. Use this for iteration and testing. Switch to production mode (`--debug false`) once you're ready — that's where the real security guarantees (attestation, no SSH, no logs) kick in.
+The guide deploys in **[debug mode](https://docs.tinfoil.sh/containers/debug-mode)** by default — SSH access + container logs, **no attestation**. Use this for iteration and testing.
 
 ## Quick start
 
-Follow **[guide.md](./guide.md)** for the full walkthrough — aws setup, tinfoil secrets, tag, deploy.
+Follow **[guide.md](./guide.md)** for the full walkthrough: aws setup, tinfoil secrets, tag, deploy.
 
 The short version (assuming aws + tinfoil are already set up):
 
-1. Edit `tinfoil-config.yml` — set `S3_BUCKET` and `AWS_REGION`.
-2. Push aws creds + your SSH key to your tinfoil org once:
+1. Edit `tinfoil-config.yml` — under the `buckets` sidecar, set `BUCKET` and `AWS_REGION`.
+2. Push aws creds, an encryption key, and your SSH key to your tinfoil org once:
    - `tinfoil secret create AWS_ACCESS_KEY_ID --value-file -` (and same for `AWS_SECRET_ACCESS_KEY`)
+   - `openssl rand -base64 32 | tinfoil secret create ENCRYPTION_KEY --value-file -` (also save the same value to `.env` — `view.py` needs it to decrypt)
    - `tinfoil ssh-key create laptop --public-key-file ~/.ssh/id_ed25519.pub`
 3. Tag a release — `gh workflow run tinfoil-build.yml -f version=v0.1.0 --ref $(git branch --show-current)`. Wait for the actions, then `git pull`.
-4. Create the container in debug mode — `tinfoil container create persistent-storage-sim --repo <owner>/<repo> --tag v0.1.0 --debug --ssh-key laptop --secret AWS_ACCESS_KEY_ID --secret AWS_SECRET_ACCESS_KEY`. Domain will be `<name>.debug.<org>.containers.tinfoil.dev`.
+4. Create the container in debug mode — `tinfoil container create persistent-storage-sim --repo <owner>/<repo> --tag v0.1.0 --debug --ssh-key laptop --secret AWS_ACCESS_KEY_ID --secret AWS_SECRET_ACCESS_KEY --secret ENCRYPTION_KEY`. Domain will be `<name>.debug.<org>.containers.tinfoil.dev`.
 5. Watch — `python status.py --url https://<domain>/status`. To shell in: `ssh -p <port> root@console.tinfoil.sh` (port shown in `tinfoil container get`).
-6. Plot — `python view.py --bucket $S3_BUCKET --latest`.
+6. Plot — `set -a && source .env && set +a && python view.py --bucket $S3_BUCKET --latest` (view.py decrypts with `$ENCRYPTION_KEY`).
 
-## What this looks like
+## What the output should look like
 
 `python status.py` — colored per-phase progress bar, ticks through `explore → drift → converge → oscillate`, shows live multipart-upload state (idle / flushing, parts uploaded, bytes streamed), prints the saved checkpoint path after each phase:
 
@@ -53,8 +56,9 @@ container/
   server.py        /health + /status (incl. live MPU telemetry)
   Dockerfile       python:3.13-slim — built by tinfoil-build.yml github action
   requirements.txt
-view.py            local — pulls JSON checkpoints from s3, plots trajectory.png
+view.py            local — pulls + decrypts JSON checkpoints from s3, plots trajectory.png
 status.py          local — colored per-phase progress bar + live upload state
+tinfoil_crypto.py  local — AES-256-GCM decrypt helper used by view.py
 tinfoil-config.yml cpus 2 / mem 8192, AWS creds as secrets, exposes /health + /status
 guide.md           full walkthrough
 ```
@@ -70,6 +74,36 @@ latest.json           — pointer to the highest N written
 `run_id` is a UTC timestamp (`YYYY-MM-DDTHH-MM-SSZ`).
 
 To resume: set `command: ["--resume-from", "<run_id>:N"]` in `tinfoil-config.yml`, tag a new release, then `tinfoil container relaunch ... --tag v0.1.1`. Sim loads `checkpoint-N.json`, restores the numpy rng state, and picks up at the start of phase N+1. The `.bin` files for already-completed phases are not re-read — they're baggage. Because the rng is restored, the resumed run is byte-identical to an uninterrupted one.
+
+## Encrypted storage via the buckets sidecar
+
+`sim` doesn't talk to S3 directly. It writes through a second container,
+[`tinfoil-buckets-sidecar`](https://github.com/tinfoilsh/tinfoil-buckets-sidecar),
+that transparently AES-256-GCM-encrypts on PUT and decrypts on GET. Ciphertext
+is what lives in the bucket; plaintext only ever exists inside the CVM.
+
+The sidecar runs alongside `sim` in the same CVM on `localhost:9000`.
+`container/storage.py` is just a normal boto3 client pointed at that endpoint
+with dummy creds — the sidecar discards the SigV4 signature and uses its own
+AWS credentials to talk to the real bucket.
+
+Configured in `tinfoil-config.yml`:
+
+```yaml
+- name: "buckets"
+  image: "ghcr.io/tinfoilsh/tinfoil-buckets-sidecar@sha256:..."
+  env:
+    - PORT: "9000"
+    - BUCKET: "your-real-s3-bucket"
+    - AWS_REGION: "us-east-2"
+  secrets:
+    - ENCRYPTION_KEY # openssl rand -base64 32
+    - AWS_ACCESS_KEY_ID
+    - AWS_SECRET_ACCESS_KEY
+```
+
+To read the encrypted objects outside the CVM, use `view.py` — it pulls ciphertext directly from S3 and decrypts via `tinfoil_crypto.py` using the master key from `$ENCRYPTION_KEY` (same value pushed to the sidecar). Also see the
+[sidecar's guides](https://github.com/tinfoilsh/tinfoil-buckets-sidecar#usage) for more - you can use the AWS CLI.
 
 ## How the streaming works
 
@@ -107,7 +141,7 @@ If a container OOMs or is force-killed, the `finally`-guarded abort can't run an
 
 ## Check s3 works
 
-`.env` (copy from `.env.example`) is handy throughout — sourcing it gives you `$S3_BUCKET`, `$AWS_REGION`, and your aws creds. Useful for both the aws CLI and for `tinfoil secret create` later.
+`.env` (copy from `.env.example`) is handy throughout — sourcing it gives you `$S3_BUCKET`, `$AWS_REGION`, your aws creds, and `$ENCRYPTION_KEY`. Useful for the aws CLI, `tinfoil secret create`, and `view.py`.
 
 ```bash
 cp .env.example .env
@@ -129,12 +163,3 @@ tinfoil container relaunch persistent-storage-sim --debug false
 ```
 
 Production mode gives you attestation (verified enclave) and drops SSH + container logs. Domain moves back to `<name>.<org>.containers.tinfoil.dev`.
-
-## Future work
-
-Currently this example uses a simple S3 storage.
-
-There are two more possible options if the storage needs to be encrypted:
-
-1. **Tinfoil buckets** (beta) — manages the encryption for you. [github](https://github.com/tinfoilsh/tinfoil-buckets-sidecar)
-2. **Custom s3 + caller-owned encryption** — more work, but specific control over how things are stored
