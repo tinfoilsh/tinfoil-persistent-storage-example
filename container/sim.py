@@ -102,10 +102,26 @@ def make_activations(rng: np.random.Generator) -> bytes:
 
 
 def flush_part(
-    key: str, upload_id: str, part_number: int, buf: bytearray, parts: list
+    key: str,
+    upload_id: str,
+    part_number: int,
+    buf: bytearray,
+    parts: list,
+    is_last: bool,
 ) -> None:
-    """Synchronously upload one part and update /status around the call."""
-    body = bytes(buf)
+    """Synchronously upload one part and update /status around the call.
+
+    The buckets sidecar requires non-last parts to be 16-byte aligned (AES
+    block size). When not last, slice off the aligned prefix and leave the
+    unaligned tail in `buf` so it gets folded into the next part.
+    """
+    if is_last:
+        body = bytes(buf)
+        buf.clear()
+    else:
+        aligned = (len(buf) // 16) * 16
+        body = bytes(buf[:aligned])
+        del buf[:aligned]
     server.update(mpu_state="uploading")
     t0 = time.monotonic()
     parts.append(storage.upload_part(key, upload_id, part_number, body))
@@ -118,7 +134,6 @@ def flush_part(
         mpu_last_part_bytes=len(body),
         mpu_bytes_total=snap.get("mpu_bytes_total", 0) + len(body),
     )
-    buf.clear()
 
 
 def run_phase(
@@ -157,7 +172,7 @@ def run_phase(
 
             if len(buf) >= PART_SIZE_BYTES:
                 part_number += 1
-                flush_part(blob_key, upload_id, part_number, buf, parts)
+                flush_part(blob_key, upload_id, part_number, buf, parts, is_last=False)
 
             # mock delay - 20ms/step
             time.sleep(0.02)
@@ -166,7 +181,7 @@ def run_phase(
         # parts). Skip if buf is empty AND we already uploaded ≥1 part.
         if buf or not parts:
             part_number += 1
-            flush_part(blob_key, upload_id, part_number, buf, parts)
+            flush_part(blob_key, upload_id, part_number, buf, parts, is_last=True)
 
         storage.complete_multipart(blob_key, upload_id, parts)
     except BaseException:
