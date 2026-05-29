@@ -10,7 +10,7 @@ memory: 8192
 
 containers:
   - name: "sim"
-    image: "ghcr.io/tinfoilsh/tinfoil-persistent-storage-example@sha256:373a23f969680e8945847b82f2e281133e1e41a59d335e3fe95ad3c64f3bf182" # v0.5.0
+    image: "ghcr.io/tinfoilsh/tinfoil-persistent-storage-example@sha256:eedb5815c13f1b21bd2a06810ca7f3c5e81881b57f009a4c8fc2db48e863df3e" # v0.5.5
     env:
       - PORT: "8080"
     # To resume an existing run, set:
