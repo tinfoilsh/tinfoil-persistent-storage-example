@@ -1,6 +1,8 @@
-# Simple persistent storage example
+# Persistent (encrypted) storage example
 
-Tinfoil containers are ephemeral. This example shows how to checkpoint long-running work to S3 to avoid losing results, restart from a checkpoint, and stream a large per-phase payload to S3 as it's produced.
+Tinfoil containers are ephemeral. This example shows how to checkpoint long-running work to an encrypted S3 bucket to avoid losing results, restart from a checkpoint, and stream a large per-phase payload to S3 as it's produced.
+
+Behind the scenes it uses [tinfoil-bucket-sidecar](https://github.com/tinfoilsh/tinfoil-buckets-sidecar), a local server that exposes an S3 compatible API that handles encryption for you, using S3s encrypted client package.
 
 The workload is a mock 4-phase random walk (explore → drift → converge → oscillate). Each phase produces:
 
@@ -9,11 +11,11 @@ The workload is a mock 4-phase random walk (explore → drift → converge → o
 
 Restartable from any JSON checkpoint. The streamed .bin files are pure baggage — they exist to demonstrate the streaming path, not to be re-read on resume.
 
-Deploys in **[debug mode](https://docs.tinfoil.sh/containers/debug-mode)** by default — SSH access + container logs, no attestation. Use this for iteration and testing. Switch to production mode (`--debug false`) once you're ready — that's where the real security guarantees (attestation, no SSH, no logs) kick in.
+The guide deploys in **[debug mode](https://docs.tinfoil.sh/containers/debug-mode)** by default — SSH access + container logs, **no attestation**. Use this for iteration and testing.
 
 ## Quick start
 
-Follow **[guide.md](./guide.md)** for the full walkthrough — aws setup, tinfoil secrets, tag, deploy.
+Follow **[guide.md](./guide.md)** for the full walkthrough: aws setup, tinfoil secrets, tag, deploy.
 
 The short version (assuming aws + tinfoil are already set up):
 
@@ -26,7 +28,7 @@ The short version (assuming aws + tinfoil are already set up):
 5. Watch — `python status.py --url https://<domain>/status`. To shell in: `ssh -p <port> root@console.tinfoil.sh` (port shown in `tinfoil container get`).
 6. Plot — `python view.py --bucket $S3_BUCKET --latest`.
 
-## What this looks like
+## What the output should look like
 
 `python status.py` — colored per-phase progress bar, ticks through `explore → drift → converge → oscillate`, shows live multipart-upload state (idle / flushing, parts uploaded, bytes streamed), prints the saved checkpoint path after each phase:
 
