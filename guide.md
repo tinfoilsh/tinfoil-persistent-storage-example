@@ -158,7 +158,7 @@ Phase 2: drift
 
 After the bar finishes, the in-enclave sim exits, the container stops. The s3 data persists — that's the point.
 
-Because you deployed with `--debug`, you can shell in any time to look at logs or poke around — `tinfoil container get` prints the SSH command (`ssh -p <port> root@console.tinfoil.sh`).
+Because you deployed with `--debug`, you can shell in any time to look at logs or poke around — `tinfoil container get` prints the SSH command (`ssh -p <port> root@debug.tinfoil.sh`).
 
 ## 7. plot the trajectory
 
