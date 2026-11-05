@@ -26,7 +26,7 @@ The short version (assuming aws + tinfoil are already set up):
    - `tinfoil ssh-key create laptop --public-key-file ~/.ssh/id_ed25519.pub`
 3. Tag a release — `gh workflow run tinfoil-build.yml -f version=v0.1.0 --ref $(git branch --show-current)`. Wait for the actions, then `git pull`.
 4. Create the container in debug mode — `tinfoil container create persistent-storage-sim --repo <owner>/<repo> --tag v0.1.0 --debug --ssh-key laptop --secret AWS_ACCESS_KEY_ID --secret AWS_SECRET_ACCESS_KEY --secret ENCRYPTION_KEY`. Domain will be `<name>.debug.<org>.containers.tinfoil.dev`.
-5. Watch — `python status.py --url https://<domain>/status`. To shell in: `ssh -p <port> root@console.tinfoil.sh` (port shown in `tinfoil container get`).
+5. Watch — `python status.py --url https://<domain>/status`. To shell in: `ssh -p <port> root@debug.tinfoil.sh` (port shown in `tinfoil container get`).
 6. Plot — `set -a && source .env && set +a && python view.py --bucket $S3_BUCKET --latest` (view.py decrypts with `$ENCRYPTION_KEY`).
 
 ## What the output should look like
